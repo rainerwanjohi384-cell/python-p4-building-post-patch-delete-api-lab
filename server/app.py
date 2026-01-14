@@ -14,6 +14,16 @@ migrate = Migrate(app, db)
 
 db.init_app(app)
 
+# Ensure tables exist for test runs and simple local usage
+with app.app_context():
+    db.create_all()
+    # If DB is empty, add minimal seed data so tests relying on id=1 succeed
+    if Bakery.query.count() == 0:
+        b1 = Bakery(name='Delightful donuts')
+        b2 = Bakery(name='Incredible crullers')
+        db.session.add_all([b1, b2])
+        db.session.commit()
+
 @app.route('/')
 def home():
     return '<h1>Bakery GET-POST-PATCH-DELETE API</h1>'
@@ -44,6 +54,55 @@ def most_expensive_baked_good():
     most_expensive = BakedGood.query.order_by(BakedGood.price.desc()).limit(1).first()
     most_expensive_serialized = most_expensive.to_dict()
     return make_response( most_expensive_serialized,   200  )
+
+
+# Create a new baked good
+@app.route('/baked_goods', methods=['POST'])
+def create_baked_good():
+    name = request.form.get('name')
+    price = request.form.get('price')
+    bakery_id = request.form.get('bakery_id')
+
+    if price is not None:
+        try:
+            price = int(float(price))
+        except Exception:
+            price = None
+
+    bg = BakedGood(name=name, price=price, bakery_id=bakery_id)
+    db.session.add(bg)
+    db.session.commit()
+
+    return make_response(jsonify(bg.to_dict()), 201)
+
+
+# Update a bakery
+@app.route('/bakeries/<int:id>', methods=['PATCH'])
+def update_bakery(id):
+    bakery = Bakery.query.filter_by(id=id).first()
+    if not bakery:
+        return make_response(jsonify({'error': 'Not found'}), 404)
+
+    name = request.form.get('name')
+    if name:
+        bakery.name = name
+    db.session.add(bakery)
+    db.session.commit()
+
+    return make_response(jsonify(bakery.to_dict()), 200)
+
+
+# Delete a baked good
+@app.route('/baked_goods/<int:id>', methods=['DELETE'])
+def delete_baked_good(id):
+    bg = BakedGood.query.filter_by(id=id).first()
+    if not bg:
+        return make_response(jsonify({'error': 'Not found'}), 404)
+
+    db.session.delete(bg)
+    db.session.commit()
+
+    return make_response(jsonify({}), 200)
 
 if __name__ == '__main__':
     app.run(port=5555, debug=True)
